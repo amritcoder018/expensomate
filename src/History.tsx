@@ -102,7 +102,7 @@ const History: React.FC = () => {
     >
       <Container maxWidth="md">
         {/* Header */}
-        <Box mb={4}>
+        <Box sx={{mb: 4}}>
           <Typography
             variant="h4"
             sx={{
@@ -150,10 +150,7 @@ const History: React.FC = () => {
               >
                 <Grid
                   container
-                  sx={{ flexDirection: { xs: "column", sm: "row" } }}
-                  alignItems="center"
-                  justifyContent="space-between"
-                  spacing={2}
+                  sx={{ flexDirection: { xs: "column", sm: "row" },alignItems:"center",justifyContent:"space-between",spacing:2 }}
                 >
                   {/* Left Section */}
                   <Grid
@@ -163,10 +160,7 @@ const History: React.FC = () => {
                     }}
                   >
                     <Stack
-                      direction="row"
-                      spacing={2}
-                      alignItems="center"
-                    >
+                    sx={{flexDirection: {xs:"column",sm:"row"},alignItems:"center",spacing:2}}>
                       {/* Icon */}
                       <Box
                         sx={{
@@ -278,12 +272,7 @@ const History: React.FC = () => {
         />
 
         <Stack
-          direction="row"
-          justifyContent="center"
-          alignItems="center"
-          spacing={2}
-          flexWrap="wrap"
-        >
+        sx={{direction: {xs:"column",sm:"row"},alignItems:"center",justifyContent:"center",spacing:2,flexWrap:"wrap"}}>
           <Button
             variant="contained"
             disabled={page === 1}
