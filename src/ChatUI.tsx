@@ -161,7 +161,6 @@ const ChatUI: React.FC = () => {
 }
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isListening, setIsListening] = useState(false);
 
   const recognitionRef = useRef<any>(null);
@@ -301,38 +300,6 @@ const getExpenseArray = (response: string): Expense[] => {
   function updateLastExpense(id:string,fieldName:string,updatedValue:string){
     handleUpdateRequest(`Update for id:${id} replace current value of ${fieldName} as ${updatedValue}`);
   }
-  function updateLastMessages(expense:Expense){
-    const expenses1=getExpenseArray(messages[messages.length-1].text);
-    console.log(expenses1);
-    console.log(expense);
-    const newExpenses=expenses1.map((item)=>
-    {
-      if(expense.id===item.id){
-        console.log("found",expense.id);
-        return expense;
-      }else{
-        return item;
-      }
-    });
-    console.log(newExpenses);
-    const newMsgText=convertExpensesToResponse(newExpenses);
-    console.log(newMsgText);
-    const newMessages=messages.map((message, index, array) =>
-   index === array.length - 1
-      ? {...message,text:convertExpensesToResponse(newExpenses)}
-      : message
-  );
-  console.log(newMessages);
-  setMessages(newMessages);
-// setMessages((prev) =>
-//   prev.map((message, index, array) =>
-//     index === array.length - 1
-//       ? {...message,text:convertExpensesToResponse(newExpenses)}
-//       : message
-//   )
-// ); 
-console.log(messages);
-}
   const handleMicToggle = () => {
     if (isListening) {
       stopListening();
