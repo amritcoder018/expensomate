@@ -12,7 +12,7 @@ import {
   Check,
 } from "@mui/icons-material";
 
-import { useEffect, useState } from "react";
+import {  useState } from "react";
 
 interface Expense {
   id: string;
