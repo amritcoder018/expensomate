@@ -7,7 +7,9 @@ import {
   Paper,
   TextField,
   Typography,
+  Button
 } from "@mui/material";
+import ExpenseBlock from "./ExpenseBlock";
 import MicIcon from "@mui/icons-material/Mic";
 import ResetIcon from "@mui/icons-material/RestartAlt";
 import StopIcon from "@mui/icons-material/Stop";
@@ -27,11 +29,115 @@ type Message = {
   id: number;
   sender: "user" | "bot";
   text: string;
+  status?:"saved"|"unsaved";
 };
+export interface Expense {
+  id:string;
+  expenseName: string;
+  expenseCategory: string;
+  expenseAmount: number | null;
+  dateOfTransaction: string;
+}
+interface ExpenseDBObject{
+  id?:number;
+  createdAt?:string;
+  expenseId:string;
+  name: string;
+  category: string;
+  date: string;
+  amount: number | null;
+  userId:string;
+}
+
+/**
+ * Detects whether response contains valid JSON array
+ */
+export const convertExpensesToResponse = (
+  expenses: Expense[]
+): string => {
+  
+  return `object created
+${JSON.stringify(expenses, null, 2)}`;
+};
+export const isJsonResponse = (response: string): boolean => {
+  try {
+    // Extract JSON part
+    const jsonStart = response.indexOf("[");
+
+    if (jsonStart === -1) {
+      return false;
+    }
+
+    const jsonString = response.slice(jsonStart);
+
+    JSON.parse(jsonString);
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Extracts and returns Expense array
+ */
+
 
 // 1. Target environment variables securely from build engine constants
 // const API_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || (process as any).env?.REACT_APP_GEMINI_API_KEY;
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL;
+
+const SUPABASE_ANON_KEY =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+  export async function saveExpensesInDB(
+  expenses: Expense[]
+) {
+  try {
+    const payload:ExpenseDBObject[] = expenses.map((expense) => ({
+    expenseId:expense.id,
+    name:expense.expenseName,
+    category:expense.expenseCategory,
+    date:expense.dateOfTransaction,
+    amount:expense.expenseAmount,
+    userId:"Guest001"
+    }));
+
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/expenses`,
+      {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+
+    console.log("Saved Expenses:", data);
+
+    return data;
+  } catch (error) {
+    console.error(
+      "Bulk Save Expense Error:",
+      error
+    );
+    throw error;
+  }
+}
 const ChatUI: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -40,13 +146,64 @@ const ChatUI: React.FC = () => {
       text: "Hello 👋 Start speaking or type your message to log an expense.",
     },
   ]);
+  const saveExpense = (message:Message)=>{
+  if(message.status!=="unsaved") return;
+  try{
+  saveExpensesInDB(getExpenseArray(message.text));
+  setMessages((msgs: Message[]) => msgs.map(m => m.id === message.id ? {...m, status:"saved"} : m));
+
+  }catch{
+    console.log("error occured while saving");
+  }
+ 
+  // Here you would implement the actual save logic, e.g.:
+  // await api.saveExpenses(expenses);
+}
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isListening, setIsListening] = useState(false);
 
   const recognitionRef = useRef<any>(null);
   const accumulatedTranscriptRef = useRef("");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+const getExpenseArray = (response: string): Expense[] => {
+  try {
+    // Find starting point of JSON array
+    const jsonStart = response.indexOf("[");
+
+    if (jsonStart === -1) {
+      return [];
+    }
+
+    // Extract JSON section
+    const jsonString = response.slice(jsonStart);
+
+    // Parse JSON
+    const parsedData = JSON.parse(jsonString);
+
+    // Ensure array
+    if (!Array.isArray(parsedData)) {
+      return [];
+    }
+    const newExpenses:Expense[]=parsedData.map((item) => ({
+      id: item.id??Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      expenseName: item.expenseName ?? "",
+      expenseCategory: item.expenseCategory ?? "",
+      expenseAmount:
+        item.expenseAmount !== null &&
+        item.expenseAmount !== undefined
+          ? Number(item.expenseAmount)
+          : null,
+      dateOfTransaction: item.dateOfTransaction ?? "",
+    }));
+    console.log(newExpenses);
+    return newExpenses;
+  } catch (error) {
+    console.error("Failed to parse expense response:", error);
+    return [];
+  }
+};
 
   // 2. Instantiate Gemini SDK framework cleanly inside browser thread
   const ai = useMemo(() => {
@@ -58,7 +215,16 @@ const ChatUI: React.FC = () => {
   const systemInstruction = useMemo(() => {
     const currentDate = new Date().toLocaleDateString();
     return `
-      You are an accounting clerk. Current Date is ${currentDate}. Your job is to process english language text to fetch valuable data like expenseName(String), expenseCategory(String), expenseAmount(Number), dateOfTransaction(dd-mm-yy). If a person misses data, ask for that specific one until all data is fetched. Give suggestions for categories. If multiple dates are mentioned, analyze them and collect data for mentioned dates and give results in array of objects format with proper spacing and structure for better view. Once all data is fetched for all dates, return array of json object starting with "object created" string. Use only one sentence to ask for data. If user deviates from the topic, say: "Lets focus on recording your expenses only!."
+      You are an accounting clerk.
+       Current Date is ${currentDate}, user may not mention the date straight away so corelate with today's date to get relative date from the indirect mention of date(yesterday, today, x days back, exaclty last month same date, etc) and convert it to (dd-mm-yy).
+        Your job is to process english language text to fetch valuable data like expenseName(String), expenseCategory(String), expenseAmount(Number), dateOfTransaction( YYYY-MM-DD).
+         If a person misses data, ask for that specific one until all data is fetched.
+          Give suggestions for categories. If multiple dates are mentioned, analyze them and collect data for mentioned dates.
+          do not ask for confirmation unless text are confusing.
+           Once all data is fetched for all dates, return array of json object starting with "object created" string after assigning "id" field with random value based on timestamp to each expenses. Use only one sentence to ask for data.Note that return json should only contain prefix 'obect created' no other text.
+           If user wants to update any of the provided expense with new data, update and display all the list of expenses again
+           always check for latest json data with 'object created' prefix when analysing chat history to get udpated data like expenseName, expenseCategory, dateOfTransaction, expenseAmount etc, user may edit and update it.
+            If user deviates from the topic, say: "Lets focus on recording your expenses only!."
     `;
   }, []);
 
@@ -132,7 +298,41 @@ const ChatUI: React.FC = () => {
     recognitionRef.current.stop();
     setIsListening(false);
   };
-
+  function updateLastExpense(id:string,fieldName:string,updatedValue:string){
+    handleUpdateRequest(`Update for id:${id} replace current value of ${fieldName} as ${updatedValue}`);
+  }
+  function updateLastMessages(expense:Expense){
+    const expenses1=getExpenseArray(messages[messages.length-1].text);
+    console.log(expenses1);
+    console.log(expense);
+    const newExpenses=expenses1.map((item)=>
+    {
+      if(expense.id===item.id){
+        console.log("found",expense.id);
+        return expense;
+      }else{
+        return item;
+      }
+    });
+    console.log(newExpenses);
+    const newMsgText=convertExpensesToResponse(newExpenses);
+    console.log(newMsgText);
+    const newMessages=messages.map((message, index, array) =>
+   index === array.length - 1
+      ? {...message,text:convertExpensesToResponse(newExpenses)}
+      : message
+  );
+  console.log(newMessages);
+  setMessages(newMessages);
+// setMessages((prev) =>
+//   prev.map((message, index, array) =>
+//     index === array.length - 1
+//       ? {...message,text:convertExpensesToResponse(newExpenses)}
+//       : message
+//   )
+// ); 
+console.log(messages);
+}
   const handleMicToggle = () => {
     if (isListening) {
       stopListening();
@@ -166,14 +366,16 @@ const ChatUI: React.FC = () => {
       }));
 
       // Initialize ephemeral stateless run instance with our payload
-      const chat = ai.chats.create({
-        model: "gemini-2.5-flash-lite",
-        history: formattedHistory,
-        config: {
-          systemInstruction,
-          temperature: 0.3,
-        },
-      });
+      const chat = ai.chats.create({ 
+  // Update this line to the official GA model identifier
+  model: "gemini-3.1-flash-lite", 
+  history: formattedHistory, 
+  config: { 
+    systemInstruction, 
+    temperature: 0.3, 
+  }, 
+});
+
 
       const response = await chat.sendMessage({ message: currentPrompt });
       return response.text || "No response text found.";
@@ -195,6 +397,30 @@ const ChatUI: React.FC = () => {
     setInput("");
     accumulatedTranscriptRef.current = "";
   };
+  const handleUpdateRequest= async (command:string)=>{
+    const userMessage:Message={
+      id:Date.now(),
+      sender:"user",
+      text:command,
+    };
+        const historySnapshot = [...messages];
+
+    setMessages((prev) => [...prev, userMessage]);
+    accumulatedTranscriptRef.current = "";
+    setLoading(true);
+
+    const replyText = await sendData(command, historySnapshot);
+
+    const botMessage: Message = {
+      id: Date.now() + 1,
+      sender: "bot",
+      text: replyText,
+      status: isJsonResponse(replyText) ? "unsaved" : undefined,
+    };
+    setMessages((prev) => [...prev, botMessage]);
+    setLoading(false);
+
+  }
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -223,6 +449,7 @@ const ChatUI: React.FC = () => {
       id: Date.now() + 1,
       sender: "bot",
       text: replyText,
+      status: isJsonResponse(replyText) ? "unsaved" : undefined,
     };
     setMessages((prev) => [...prev, botMessage]);
     setLoading(false);
@@ -235,7 +462,7 @@ const ChatUI: React.FC = () => {
           Accounting Clerk Session Agent 
         </Box> 
         <Box sx={{ flex: 1, overflowY: "auto", px: 2, py: 3, backgroundColor: "#faf7ff" }} > 
-          {messages.map((msg) => { 
+          {messages.map((msg,index) => { 
             const isUser = msg.sender === "user"; 
             return ( 
               <Box key={msg.id} sx={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", mb: 2 }} > 
@@ -244,7 +471,21 @@ const ChatUI: React.FC = () => {
                     {isUser ? <PersonIcon /> : <SmartToyIcon />} 
                   </Avatar> 
                   <Box sx={{ px: 2, py: 1.5, borderRadius: 4, backgroundColor: isUser ? "#7B1FA2" : "#EDE9FE", color: isUser ? "#fff" : "#3B0764", boxShadow: 2 }} > 
-                    <Typography sx={{ lineHeight: 1.5, whiteSpace: "pre-wrap" }} > {msg.text} </Typography> 
+                    {isJsonResponse(msg.text) ? (
+                      getExpenseArray(msg.text).map((expense) => (
+                        <ExpenseBlock key={expense.id} expense={expense} isLastMessage={index===messages.length-1} updateExpenses={updateLastExpense}/>
+                      ))
+                    ) : (
+                      <Typography sx={{ lineHeight: 1.5, whiteSpace: "pre-wrap" }} > {msg.text} </Typography>
+                    )}
+                    { index===messages.length-1 && msg.status === "unsaved" && (
+                      <Button variant="contained" onClick={() =>saveExpense(msg)} size="small" sx={{ mt: 1, color: "white",fontWeight: 600, textTransform: "none",backgroundColor:"red", fontSize: "0.75rem", "&:hover": { bgcolor: "#fe2626" } }} >
+                        save
+                      </Button>
+                    )}
+                    {msg.status === "saved" && (
+                      <Typography variant="caption" sx={{ mt: 0.5,backgroundColor:"#2bf032",borderRadius: 4, color: "#fff", fontStyle: "italic" ,fontWeight: 600}} >Expense Saved </Typography>
+                    ) }
                   </Box> 
                 </Box> 
               </Box> 
